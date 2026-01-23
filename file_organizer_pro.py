@@ -147,7 +147,7 @@ class FileOrganizerPro:
                              font=("Segoe UI", 10), relief=tk.FLAT, cursor="hand2", padx=15, pady=5)
         theme_btn.pack(side=tk.RIGHT)
         
-        # Folder selection with drag & drop hint
+        # Folder selection frame
         folder_frame = ttk.Frame(main_frame)
         folder_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -158,10 +158,6 @@ class FileOrganizerPro:
                                font=("Segoe UI", 10), insertbackground=self.current_theme['fg'],
                                relief=tk.FLAT)
         folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
-        
-        # Enable drag and drop
-        folder_entry.drop_target_register(tk.DND_FILES)
-        folder_entry.dnd_bind('<<Drop>>', self.drop_folder)
         
         browse_btn = tk.Button(folder_frame, text="Browse", command=self.browse_folder,
                               bg=self.current_theme['button_bg'], fg=self.current_theme['fg'],
@@ -432,13 +428,6 @@ class FileOrganizerPro:
         self.notebook = None
         self.setup_ui()
         self.status_var.set("Theme changed successfully")
-        
-    def drop_folder(self, event):
-        """Handle drag and drop folder"""
-        folder = event.data.strip('{}')
-        if os.path.isdir(folder):
-            self.source_folder.set(folder)
-            self.status_var.set(f"Dropped folder: {folder}")
         
     def browse_folder(self):
         """Open folder browser dialog"""
