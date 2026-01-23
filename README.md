@@ -48,7 +48,6 @@ A powerful and feature-rich Python desktop application to organize files with an
 - Multi-threaded scanning and organizing
 - Real-time progress tracking
 - Keyboard shortcuts for power users
-- Drag & drop folder support
 - Settings persistence across sessions
 
 ## 🚀 Quick Start
@@ -86,7 +85,6 @@ That's it! No additional dependencies required.
 
 1. **Select a Folder** 
    - Click "Browse" or press `Ctrl+O`
-   - Or drag & drop a folder into the application
 
 2. **Choose Organization Mode**:
    - **File Type**: Organizes into categories (Images, Videos, Documents, etc.)
