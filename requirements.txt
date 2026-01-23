@@ -1,0 +1,12 @@
+# File Organizer Pro - Requirements
+# No external dependencies required!
+# This application uses only Python standard library modules:
+# - tkinter (GUI framework - comes with Python)
+# - os (file operations)
+# - shutil (file moving)
+# - pathlib (path handling)
+# - datetime (date operations)
+# - json (settings storage)
+# - threading (multi-threading)
+
+# Python 3.7+ required
