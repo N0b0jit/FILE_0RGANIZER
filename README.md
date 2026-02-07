@@ -72,12 +72,18 @@ cd FILE_0RGANIZER
 python file_organizer.py
 ```
 
-**Enhanced Pro Version (Recommended):**
+**Enhanced Pro Version:**
 ```bash
 python file_organizer_pro.py
 ```
 
-That's it! No additional dependencies required.
+**Ultimate v3.1 (Latest):**
+```bash
+python file_organizer_ultimate.py
+```
+
+**Portable Executable:**
+Download and run `FileOrganizerUltimate.exe` from the `dist/` folder. No Python required!
 
 ## 📖 How to Use
 
