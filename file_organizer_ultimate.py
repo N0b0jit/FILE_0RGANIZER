@@ -1,58 +1,60 @@
+
 """
-File Organizer Ultimate - v3.0
+File Organizer Ultimate - v3.1 (Refactored)
 Advanced file organizer with animated UI, duplicate finder, and smart features
 Author: N0b0jit
 """
 
 import os
-import shutil
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from pathlib import Path
-from datetime import datetime
-import json
 import threading
-import hashlib
-from collections import defaultdict
 import time
+from core_logic import OrganizerCore
 
 class AnimatedButton(tk.Canvas):
-    """Animated button with hover effects"""
+    """Animated button with hover effects and smooth transitions"""
     def __init__(self, parent, text, command, bg_color, fg_color, **kwargs):
-        super().__init__(parent, height=40, highlightthickness=0, **kwargs)
+        super().__init__(parent, height=45, highlightthickness=0, **kwargs)
         self.bg_color = bg_color
         self.fg_color = fg_color
         self.text = text
         self.command = command
-        self.hover = False
+        self.hover_color = self.adjust_brightness(bg_color, 1.2)
         
-        self.rect = self.create_rectangle(0, 0, 200, 40, fill=bg_color, outline="", tags="bg")
-        self.text_id = self.create_text(100, 20, text=text, fill=fg_color, font=("Segoe UI", 11, "bold"))
+        self.rect = self.create_rectangle(0, 0, 400, 45, fill=bg_color, outline="", tags="bg")
+        self.text_id = self.create_text(0, 22, text=text, fill=fg_color, font=("Segoe UI", 11, "bold"), anchor="w")
         
         self.bind("<Enter>", self.on_enter)
         self.bind("<Leave>", self.on_leave)
-        self.bind("<Button-1>", lambda e: command())
+        self.bind("<Button-1>", self.on_click)
+        self.bind("<Configure>", self.on_resize)
         
+    def on_resize(self, event):
+        self.coords(self.rect, 0, 0, event.width, 45)
+        self.coords(self.text_id, event.width//2, 22)
+        self.itemconfig(self.text_id, anchor="center")
+
+    def adjust_brightness(self, hex_color, factor):
+        hex_color = hex_color.lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        new_rgb = tuple(min(255, int(c * factor)) for c in rgb)
+        return '#%02x%02x%02x' % new_rgb
+
     def on_enter(self, e):
-        self.hover = True
-        self.animate_hover()
+        self.itemconfig(self.rect, fill=self.hover_color)
+        self.config(cursor="hand2")
         
     def on_leave(self, e):
-        self.hover = False
+        self.itemconfig(self.rect, fill=self.bg_color)
         
-    def animate_hover(self):
-        if self.hover:
-            self.itemconfig(self.rect, fill=self.lighten_color(self.bg_color))
-            self.after(50, self.animate_hover)
-        else:
-            self.itemconfig(self.rect, fill=self.bg_color)
-            
-    def lighten_color(self, color):
-        # Simple color lightening
-        return color
+    def on_click(self, e):
+        self.itemconfig(self.rect, fill=self.adjust_brightness(self.bg_color, 0.8))
+        self.after(100, lambda: self.itemconfig(self.rect, fill=self.hover_color))
+        self.command()
 
 class FileOrganizerUltimate:
-    """Ultimate File Organizer with advanced features"""
+    """Ultimate File Organizer with decoupled core logic"""
     
     DEFAULT_CATEGORIES = {
         'Images': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.ico', '.webp'],
@@ -94,329 +96,297 @@ class FileOrganizerUltimate:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("File Organizer Ultimate v3.0")
-        self.root.geometry("1200x850")
+        self.root.title("File Organizer Ultimate v3.1")
+        self.root.geometry("1100x800")
         
         self.source_folder = tk.StringVar()
         self.categories = self.DEFAULT_CATEGORIES.copy()
-        self.organize_mode = tk.StringVar(value="category")
         self.file_list = []
-        self.duplicates = {}
         self.undo_history = []
-        self.theme = "dark"
         
         self.colors = {
-            'bg': '#0f0f1e',
-            'fg': '#e0e0e0',
-            'accent': '#00d4ff',
-            'accent2': '#ff006e',
-            'success': '#00ff88',
-            'card': '#1a1a2e',
-            'hover': '#252540'
+            'bg': '#0f172a',
+            'fg': '#f8fafc',
+            'accent': '#38bdf8',
+            'accent2': '#f43f5e',
+            'success': '#10b981',
+            'card': '#1e293b',
+            'hover': '#334155'
         }
         
         self.setup_ui()
-        self.animate_startup()
-        
-    def setup_ui(self):
-        """Setup animated UI"""
-        self.root.configure(bg=self.colors['bg'])
-        
-        # Header with gradient effect
-        header = tk.Canvas(self.root, height=80, bg=self.colors['bg'], highlightthickness=0)
-        header.pack(fill=tk.X)
-        
-        # Animated title
-        self.title_text = header.create_text(600, 40, text="⚡ FILE ORGANIZER ULTIMATE",
-                                            fill=self.colors['accent'], 
-                                            font=("Segoe UI", 24, "bold"))
-        
-        # Main container
-        main = tk.Frame(self.root, bg=self.colors['bg'])
-        main.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
-        
-        # Left panel - Controls
-        left = tk.Frame(main, bg=self.colors['card'], width=350)
-        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-        left.pack_propagate(False)
-        
-        self.setup_controls(left)
-        
-        # Right panel - Preview
-        right = tk.Frame(main, bg=self.colors['card'])
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        self.setup_preview(right)
-        
-        # Status bar with animation
-        self.status_bar = tk.Label(self.root, text="Ready ⚡", bg=self.colors['card'],
-                                  fg=self.colors['accent'], font=("Segoe UI", 10),
-                                  anchor=tk.W, padx=10)
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
-        
-    def setup_controls(self, parent):
-        """Setup control panel"""
-        tk.Label(parent, text="📁 Folder Selection", bg=self.colors['card'],
-                fg=self.colors['fg'], font=("Segoe UI", 12, "bold")).pack(pady=10)
-        
-        # Folder entry
-        folder_frame = tk.Frame(parent, bg=self.colors['card'])
-        folder_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        tk.Entry(folder_frame, textvariable=self.source_folder, bg=self.colors['bg'],
-                fg=self.colors['fg'], font=("Segoe UI", 10), relief=tk.FLAT).pack(fill=tk.X, pady=5)
-        
-        tk.Button(folder_frame, text="Browse", command=self.browse_folder,
-                 bg=self.colors['accent'], fg=self.colors['bg'], relief=tk.FLAT,
-                 font=("Segoe UI", 10, "bold"), cursor="hand2").pack(fill=tk.X)
-        
-        # Templates
-        tk.Label(parent, text="🎨 Templates", bg=self.colors['card'],
-                fg=self.colors['fg'], font=("Segoe UI", 12, "bold")).pack(pady=(20, 10))
-        
-        for template in self.TEMPLATES.keys():
-            tk.Button(parent, text=template, command=lambda t=template: self.load_template(t),
-                     bg=self.colors['hover'], fg=self.colors['fg'], relief=tk.FLAT,
-                     font=("Segoe UI", 9), cursor="hand2").pack(fill=tk.X, padx=10, pady=2)
-        
-        # Actions
-        tk.Label(parent, text="⚡ Actions", bg=self.colors['card'],
-                fg=self.colors['fg'], font=("Segoe UI", 12, "bold")).pack(pady=(20, 10))
-        
-        actions = [
-            ("🔍 Scan Files", self.scan_folder, self.colors['success']),
-            ("🔎 Find Duplicates", self.find_duplicates, self.colors['accent2']),
-            ("✨ Organize", self.organize_files, self.colors['accent']),
-            ("↶ Undo", self.undo_last, self.colors['accent2'])
-        ]
-        
-        for text, cmd, color in actions:
-            tk.Button(parent, text=text, command=cmd, bg=color, fg=self.colors['bg'],
-                     relief=tk.FLAT, font=("Segoe UI", 11, "bold"),
-                     cursor="hand2", pady=8).pack(fill=tk.X, padx=10, pady=5)
-        
-        # Progress
-        self.progress = ttk.Progressbar(parent, mode='indeterminate')
-        self.progress.pack(fill=tk.X, padx=10, pady=20)
-        
-    def setup_preview(self, parent):
-        """Setup preview panel"""
-        tk.Label(parent, text="📊 File Preview", bg=self.colors['card'],
-                fg=self.colors['fg'], font=("Segoe UI", 14, "bold")).pack(pady=10)
-        
-        # Stats frame
-        stats_frame = tk.Frame(parent, bg=self.colors['bg'])
-        stats_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.stats_labels = {}
-        stats = [("Files", "0"), ("Size", "0 B"), ("Duplicates", "0")]
-        
-        for i, (label, value) in enumerate(stats):
-            frame = tk.Frame(stats_frame, bg=self.colors['hover'])
-            frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-            
-            tk.Label(frame, text=label, bg=self.colors['hover'], fg=self.colors['fg'],
-                    font=("Segoe UI", 9)).pack()
-            self.stats_labels[label] = tk.Label(frame, text=value, bg=self.colors['hover'],
-                                               fg=self.colors['accent'], font=("Segoe UI", 16, "bold"))
-            self.stats_labels[label].pack()
-        
-        # Tree view
-        tree_frame = tk.Frame(parent, bg=self.colors['card'])
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        self.tree = ttk.Treeview(tree_frame, columns=("Name", "Size", "Type", "Destination"),
-                                show="headings", height=20)
-        
-        for col in ("Name", "Size", "Type", "Destination"):
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=150)
-        
-        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-    def animate_startup(self):
-        """Startup animation"""
         self.pulse_title()
         
-    def pulse_title(self, alpha=0):
-        """Pulse animation for title"""
-        colors = ['#00d4ff', '#ff006e', '#00ff88']
-        color = colors[int(time.time() * 2) % 3]
-        try:
-            self.root.nametowidget(str(self.title_text))
-            self.after_id = self.root.after(500, self.pulse_title)
-        except:
-            pass
-            
-    def browse_folder(self):
-        folder = filedialog.askdirectory()
-        if folder:
-            self.source_folder.set(folder)
-            self.update_status(f"Selected: {folder}")
-            
-    def load_template(self, template_name):
-        self.categories = self.TEMPLATES[template_name].copy()
-        self.update_status(f"Loaded template: {template_name}")
-        messagebox.showinfo("Template", f"Loaded {template_name} template!")
+    def setup_ui(self):
+        self.root.configure(bg=self.colors['bg'])
         
+        # Header
+        header = tk.Frame(self.root, bg=self.colors['bg'], height=100)
+        header.pack(fill=tk.X, pady=20)
+        
+        self.title_label = tk.Label(header, text="⚡ FILE ORGANIZER ULTIMATE",
+                                   bg=self.colors['bg'], fg=self.colors['accent'],
+                                   font=("Segoe UI", 28, "bold"))
+        self.title_label.pack()
+        
+        # Main Layout
+        main_container = tk.Frame(self.root, bg=self.colors['bg'])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
+        
+        # Left Panel (Controls)
+        left_panel = tk.Frame(main_container, bg=self.colors['card'], width=300)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+        left_panel.pack_propagate(False)
+        
+        self.setup_controls(left_panel)
+        
+        # Right Panel (Preview)
+        right_panel = tk.Frame(main_container, bg=self.colors['bg'])
+        right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.setup_preview(right_panel)
+        
+        # Status Bar
+        self.status_var = tk.StringVar(value="Ready ⚡")
+        status_bar = tk.Label(self.root, textvariable=self.status_var, bg=self.colors['card'],
+                             fg=self.colors['accent'], font=("Segoe UI", 10),
+                             anchor="w", padx=20, pady=5)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    def setup_controls(self, parent):
+        tk.Label(parent, text="FOLDER", bg=self.colors['card'], fg=self.colors['accent'],
+                font=("Segoe UI", 10, "bold")).pack(pady=(20, 5))
+        
+        entry_frame = tk.Frame(parent, bg=self.colors['hover'], padx=5, pady=5)
+        entry_frame.pack(fill=tk.X, padx=15)
+        
+        tk.Entry(entry_frame, textvariable=self.source_folder, bg=self.colors['hover'],
+                fg=self.colors['fg'], font=("Segoe UI", 10), relief=tk.FLAT).pack(fill=tk.X)
+        
+        AnimatedButton(parent, "Browse Folder", self.browse_folder, 
+                      self.colors['hover'], self.colors['fg']).pack(fill=tk.X, padx=15, pady=10)
+
+        tk.Label(parent, text="TEMPLATES", bg=self.colors['card'], fg=self.colors['accent'],
+                font=("Segoe UI", 10, "bold")).pack(pady=(20, 5))
+        
+        for name in self.TEMPLATES.keys():
+            AnimatedButton(parent, name, lambda n=name: self.load_template(n),
+                          self.colors['card'], self.colors['fg']).pack(fill=tk.X, padx=15, pady=2)
+
+        tk.Label(parent, text="ACTIONS", bg=self.colors['card'], fg=self.colors['accent'],
+                font=("Segoe UI", 10, "bold")).pack(pady=(20, 5))
+        
+        AnimatedButton(parent, "🔍 Scan Files", self.scan_folder, 
+                      self.colors['success'], self.colors['bg']).pack(fill=tk.X, padx=15, pady=5)
+        
+        AnimatedButton(parent, "🔎 Find Duplicates", self.find_duplicates, 
+                      self.colors['accent2'], self.colors['bg']).pack(fill=tk.X, padx=15, pady=5)
+        
+        AnimatedButton(parent, "✨ Organize Now", self.organize_files, 
+                      self.colors['accent'], self.colors['bg']).pack(fill=tk.X, padx=15, pady=5)
+
+        self.undo_btn = AnimatedButton(parent, "↶ Undo Last", self.undo_last, 
+                                      self.colors['hover'], self.colors['fg'])
+        self.undo_btn.pack(fill=tk.X, padx=15, pady=20)
+
+    def setup_preview(self, parent):
+        # Stats Cards
+        stats_container = tk.Frame(parent, bg=self.colors['bg'])
+        stats_container.pack(fill=tk.X, pady=(0, 20))
+        
+        self.stats = {}
+        for label in ["Files", "Total Size", "Duplicates"]:
+            card = tk.Frame(stats_container, bg=self.colors['card'], padx=15, pady=10)
+            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+            
+            tk.Label(card, text=label.upper(), bg=self.colors['card'], fg=self.colors['accent'],
+                    font=("Segoe UI", 9, "bold")).pack()
+            
+            val = tk.Label(card, text="0", bg=self.colors['card'], fg=self.colors['fg'],
+                          font=("Segoe UI", 18, "bold"))
+            val.pack()
+            self.stats[label] = val
+
+        # Progress Bar
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(parent, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill=tk.X, pady=10)
+
+        # Treeview
+        tree_frame = tk.Frame(parent, bg=self.colors['card'])
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview", background=self.colors['card'], foreground=self.colors['fg'],
+                       fieldbackground=self.colors['card'], borderwidth=0, font=("Segoe UI", 10))
+        style.configure("Treeview.Heading", background=self.colors['hover'], foreground=self.colors['accent'],
+                       font=("Segoe UI", 10, "bold"), borderwidth=0)
+        
+        self.tree = ttk.Treeview(tree_frame, columns=("Name", "Size", "Type", "Dest"), show="headings")
+        self.tree.heading("Name", text="FILE NAME")
+        self.tree.heading("Size", text="SIZE")
+        self.tree.heading("Type", text="TYPE")
+        self.tree.heading("Dest", text="TARGET FOLDER")
+        
+        self.tree.column("Name", width=300)
+        self.tree.column("Size", width=100)
+        self.tree.column("Type", width=80)
+        self.tree.column("Dest", width=150)
+        
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def pulse_title(self):
+        current_color = self.title_label.cget("fg")
+        next_color = self.colors['accent2'] if current_color == self.colors['accent'] else self.colors['accent']
+        self.title_label.config(fg=next_color)
+        self.root.after(1000, self.pulse_title)
+
+    def browse_folder(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.source_folder.set(path)
+            self.show_status(f"Targeting: {path}")
+
+    def load_template(self, name):
+        self.categories = self.TEMPLATES[name].copy()
+        messagebox.showinfo("Ultimate", f"Applied '{name}' template successfully!")
+
+    def show_status(self, msg):
+        self.status_var.set(f"⚡ {msg}")
+
     def scan_folder(self):
         folder = self.source_folder.get()
         if not folder or not os.path.exists(folder):
-            messagebox.showerror("Error", "Select a valid folder")
+            messagebox.showerror("Error", "Invalid directory selected.")
             return
             
-        self.progress.start()
+        self.progress_var.set(0)
+        self.tree.delete(*self.tree.get_children())
         threading.Thread(target=self._scan_thread, args=(folder,), daemon=True).start()
-        
+
     def _scan_thread(self, folder):
-        self.file_list = []
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
         try:
+            self.file_list = []
             files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-            total_size = 0
-            
-            for filename in files:
-                filepath = os.path.join(folder, filename)
-                size = os.path.getsize(filepath)
-                ext = Path(filename).suffix.lower()
-                dest = self._get_destination(ext)
+            total = len(files)
+            total_bytes = 0
+
+            for i, name in enumerate(files):
+                path = os.path.join(folder, name)
+                size = os.path.getsize(path)
+                dest = OrganizerCore.get_destination(name, self.categories)
                 
-                self.file_list.append({
-                    'name': filename,
-                    'path': filepath,
-                    'size': size,
-                    'ext': ext,
-                    'dest': dest
-                })
+                info = {'name': name, 'path': path, 'size': size, 'dest': dest}
+                self.file_list.append(info)
+                total_bytes += size
                 
-                total_size += size
+                self.root.after(0, lambda f=info: self.tree.insert("", "end", values=(
+                    f['name'], OrganizerCore.format_size(f['size']), 
+                    os.path.splitext(f['name'])[1], f['dest']
+                )))
                 
-                self.root.after(0, lambda f=filename, s=size, e=ext, d=dest: 
-                              self.tree.insert("", tk.END, values=(f, self._format_size(s), e, d)))
+                self.progress_var.set(((i+1)/total)*100)
             
-            self.root.after(0, lambda: self.stats_labels["Files"].config(text=str(len(files))))
-            self.root.after(0, lambda: self.stats_labels["Size"].config(text=self._format_size(total_size)))
-            self.root.after(0, lambda: self.update_status(f"Scanned {len(files)} files"))
+            self.root.after(0, lambda: self.stats["Files"].config(text=str(total)))
+            self.root.after(0, lambda: self.stats["Total Size"].config(text=OrganizerCore.format_size(total_bytes)))
+            self.show_status(f"Found {total} files.")
             
-        finally:
-            self.root.after(0, self.progress.stop)
-            
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Scan Error", str(e)))
+
     def find_duplicates(self):
         if not self.file_list:
-            messagebox.showwarning("Warning", "Scan folder first")
+            messagebox.showwarning("Warning", "Scan a folder first.")
             return
             
-        self.progress.start()
-        threading.Thread(target=self._find_duplicates_thread, daemon=True).start()
+        self.show_status("Hashing files (chunked)...")
+        self.progress_var.set(0)
+        threading.Thread(target=self._dup_thread, daemon=True).start()
+
+    def _dup_thread(self):
+        paths = [f['path'] for f in self.file_list]
         
-    def _find_duplicates_thread(self):
-        hash_map = defaultdict(list)
+        def update_p(curr, total):
+            self.progress_var.set((curr/total)*100)
+
+        dups = OrganizerCore.find_duplicates(paths, progress_callback=update_p)
+        count = sum(len(v)-1 for v in dups.values())
         
-        for file_info in self.file_list:
-            try:
-                with open(file_info['path'], 'rb') as f:
-                    file_hash = hashlib.md5(f.read()).hexdigest()
-                    hash_map[file_hash].append(file_info['name'])
-            except:
-                pass
+        self.root.after(0, lambda: self.stats["Duplicates"].config(text=str(count)))
+        self.show_status(f"Found {count} duplicate files.")
         
-        self.duplicates = {k: v for k, v in hash_map.items() if len(v) > 1}
-        dup_count = sum(len(v) - 1 for v in self.duplicates.values())
-        
-        self.root.after(0, lambda: self.stats_labels["Duplicates"].config(text=str(dup_count)))
-        self.root.after(0, lambda: self.update_status(f"Found {dup_count} duplicates"))
-        self.root.after(0, self.progress.stop)
-        
-        if self.duplicates:
-            self.root.after(0, self.show_duplicates)
-            
-    def show_duplicates(self):
+        if count > 0:
+            self.root.after(0, lambda: self.show_dup_dialog(dups))
+
+    def show_dup_dialog(self, dups):
         win = tk.Toplevel(self.root)
-        win.title("Duplicate Files")
+        win.title("Duplicate Finder Results")
         win.geometry("600x400")
         win.configure(bg=self.colors['bg'])
         
-        text = tk.Text(win, bg=self.colors['card'], fg=self.colors['fg'], font=("Consolas", 10))
-        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        txt = tk.Text(win, bg=self.colors['card'], fg=self.colors['fg'], font=("Consolas", 10), padx=10, pady=10)
+        txt.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        for files in self.duplicates.values():
-            text.insert(tk.END, "Duplicates:\n", "header")
-            for f in files:
-                text.insert(tk.END, f"  • {f}\n")
-            text.insert(tk.END, "\n")
+        for h, paths in dups.items():
+            txt.insert("end", f"HASH: {h}\n", "head")
+            for p in paths:
+                txt.insert("end", f"  • {os.path.basename(p)}\n")
+            txt.insert("end", "\n")
             
-        text.tag_config("header", foreground=self.colors['accent'], font=("Segoe UI", 10, "bold"))
-        
+        txt.tag_config("head", foreground=self.colors['accent'], font=("Consolas", 10, "bold"))
+
     def organize_files(self):
         if not self.file_list:
-            messagebox.showwarning("Warning", "Scan folder first")
+            messagebox.showwarning("Warning", "Scan a folder first.")
             return
             
-        if not messagebox.askyesno("Confirm", f"Organize {len(self.file_list)} files?"):
+        if not messagebox.askyesno("Confirm", f"Move {len(self.file_list)} files?"):
             return
             
-        self.progress.start()
-        threading.Thread(target=self._organize_thread, daemon=True).start()
-        
-    def _organize_thread(self):
-        folder = self.source_folder.get()
+        self.show_status("Organizing...")
+        threading.Thread(target=self._org_thread, daemon=True).start()
+
+    def _org_thread(self):
         moves = []
+        folder = self.source_folder.get()
         
-        for file_info in self.file_list:
-            dest_folder = os.path.join(folder, file_info['dest'])
-            os.makedirs(dest_folder, exist_ok=True)
+        for i, info in enumerate(self.file_list):
+            dest_dir = os.path.join(folder, info['dest'])
+            try:
+                new_path, moved = OrganizerCore.safe_move(info['path'], dest_dir)
+                if moved:
+                    moves.append({'from': info['path'], 'to': new_path})
+            except Exception as e:
+                print(f"Error {info['name']}: {e}")
             
-            dest_path = os.path.join(dest_folder, file_info['name'])
-            if dest_path != file_info['path']:
-                shutil.move(file_info['path'], dest_path)
-                moves.append({'from': file_info['path'], 'to': dest_path})
-        
+            self.progress_var.set(((i+1)/len(self.file_list))*100)
+            
         if moves:
             self.undo_history.append(moves)
             
-        self.root.after(0, lambda: self.update_status(f"Organized {len(moves)} files"))
-        self.root.after(0, self.progress.stop)
-        self.root.after(0, lambda: messagebox.showinfo("Success", f"Organized {len(moves)} files!"))
-        
+        self.show_status(f"Organized {len(moves)} files.")
+        self.root.after(0, lambda: messagebox.showinfo("Ultimate", f"Successfully organized {len(moves)} files!"))
+
     def undo_last(self):
         if not self.undo_history:
-            messagebox.showinfo("Info", "Nothing to undo")
+            messagebox.showinfo("Undo", "Nothing left to undo.")
             return
             
         moves = self.undo_history.pop()
-        for move in reversed(moves):
-            if os.path.exists(move['to']):
-                shutil.move(move['to'], move['from'])
+        for m in reversed(moves):
+            if os.path.exists(m['to']):
+                os.makedirs(os.path.dirname(m['from']), exist_ok=True)
+                os.rename(m['to'], m['from'])
                 
-        self.update_status("Undo complete")
-        messagebox.showinfo("Success", f"Undone {len(moves)} moves")
-        
-    def _get_destination(self, ext):
-        for category, extensions in self.categories.items():
-            if ext in extensions:
-                return category
-        return "Others"
-        
-    def _format_size(self, size):
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
-        
-    def update_status(self, text):
-        self.status_bar.config(text=f"⚡ {text}")
+        self.show_status(f"Undid {len(moves)} movements.")
+        messagebox.showinfo("Undo", "Successfully reverted last operation.")
 
-def main():
+if __name__ == "__main__":
     root = tk.Tk()
     app = FileOrganizerUltimate(root)
     root.mainloop()
-
-if __name__ == "__main__":
-    main()
